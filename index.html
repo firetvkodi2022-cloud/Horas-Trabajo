@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Control de Horas PRO</title>
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Horas PRO">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/10543/10543125.png">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        .active-tab { border-t-4 border-blue-600 text-blue-600 bg-white; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Ajuste para el notch del iPhone */
+        body { padding-top: env(safe-area-inset-top); }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col font-sans">
+
+    <div class="p-4 bg-white shadow-sm flex justify-between items-center relative">
+        <div class="flex flex-col">
+            <span class="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">Empresa</span>
+            <select id="selectEmpresa" onchange="cambiarEmpresaActiva()" class="bg-transparent border-none font-black text-blue-600 text-sm focus:ring-0 p-0"></select>
+        </div>
+        <h1 id="mesTitulo" class="text-lg font-black text-gray-800 uppercase tracking-tighter italic">Enero 2026</h1>
+        <button onclick="toggleMenu()" class="w-10 h-10 flex items-center justify-center rounded-full active:bg-gray-200 text-2xl font-black">⋮</button>
+
+        <div id="menuOpciones" class="hidden absolute top-16 right-4 bg-white shadow-2xl rounded-2xl border z-[100] w-64 overflow-hidden text-left">
+            <button onclick="nuevaEmpresa()" class="w-full text-left px-5 py-4 hover:bg-gray-50 border-b flex items-center gap-3 text-sm font-bold">🏢 Añadir Empresa</button>
+            <button onclick="fijarPrecioGlobal()" class="w-full text-left px-5 py-4 hover:bg-gray-50 border-b flex items-center gap-3 text-sm font-bold text-blue-600">💰 Precio Hora Normal</button>
+            <button onclick="cambiarAnio()" class="w-full text-left px-5 py-4 hover:bg-gray-50 border-b flex items-center gap-3 text-sm font-bold">📅 Cambiar Año</button>
+            <button onclick="exportarExcel()" class="w-full text-left px-5 py-4 hover:bg-gray-50 border-b flex items-center gap-3 text-sm font-bold text-green-600">📊 Exportar Excel</button>
+            <button onclick="abrirModalPDF()" class="w-full text-left px-5 py-4 hover:bg-gray-50 flex items-center gap-3 text-sm font-bold text-red-600 font-black italic">📄 CONFIGURAR PDF</button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 p-4 bg-gray-900 shadow-xl">
+        <div class="bg-gray-800 p-4 rounded-2xl border-b-4 border-blue-500 text-center text-white">
+            <p class="text-blue-400 text-[9px] font-black uppercase italic mb-1">HORAS <span id="labelEmpresaH"></span></p>
+            <span id="totalHorasMes" class="text-2xl font-black italic">0h</span>
+        </div>
+        <div class="bg-gray-800 p-4 rounded-2xl border-b-4 border-green-500 text-center text-white">
+            <p class="text-green-400 text-[9px] font-black uppercase italic mb-1">EUROS <span id="labelEmpresaD"></span></p>
+            <span id="totalDineroMes" class="text-2xl font-black italic">0.00€</span>
+        </div>
+    </div>
+
+    <div id="app" class="flex-1 overflow-y-auto p-4 pb-28 no-scrollbar">
+        <div id="listaJornadas" class="space-y-2"></div>
+    </div>
+
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t flex overflow-x-auto no-scrollbar shadow-2xl z-50 pb-safe">
+        <script>
+            const mesesBtn = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+            mesesBtn.forEach((m, i) => { 
+                document.write(`<button onclick="cambiarMes(${i})" class="tab-btn flex-none px-6 py-5 text-[10px] font-black uppercase tracking-widest">${m}</button>`); 
+            });
+        </script>
+    </div>
+
+    <div id="modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl text-center overflow-y-auto max-h-[90vh] no-scrollbar">
+            <h2 id="modalTitulo" class="text-2xl font-black mb-4 text-gray-800 italic">Día</h2>
+            <div class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="text-left"><label class="text-[9px] font-bold text-gray-400 uppercase ml-2">Entrada</label><input type="time" id="entrada" class="w-full border-2 p-3 rounded-2xl font-bold text-center"></div>
+                    <div class="text-left"><label class="text-[9px] font-bold text-gray-400 uppercase ml-2">Salida</label><input type="time" id="salida" class="w-full border-2 p-3 rounded-2xl font-bold text-center"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="text-left"><label class="text-[9px] font-bold text-gray-400 uppercase ml-2">Descanso (min)</label><input type="number" id="desayuno" value="30" class="w-full border-2 p-3 rounded-2xl font-bold text-center"></div>
+                    <div class="text-left"><label class="text-[9px] font-bold text-gray-400 uppercase ml-2">Precio Normal</label><input type="number" id="precio" step="0.01" class="w-full border-2 p-3 rounded-2xl font-bold text-center text-green-600"></div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-200">
+                    <label class="flex items-center justify-center gap-3 cursor-pointer">
+                        <input type="checkbox" id="checkExtra" onchange="toggleExtra()" class="w-5 h-5 accent-blue-600">
+                        <span class="font-black text-xs uppercase italic text-gray-600">Horas Extras</span>
+                    </label>
+                    <div id="divExtras" class="hidden mt-4 space-y-3 pt-3 border-t">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="text-left"><label class="text-[9px] font-bold text-blue-500 uppercase ml-2">Nº Horas</label><input type="number" id="hExtraCant" step="0.1" value="0" class="w-full border-2 p-3 rounded-2xl font-bold text-center bg-blue-50"></div>
+                            <div class="text-left"><label class="text-[9px] font-bold text-blue-500 uppercase ml-2">Precio (€)</label><input type="number" id="hExtraPrecio" step="0.01" value="20" class="w-full border-2 p-3 rounded-2xl font-bold text-center bg-blue-50 text-blue-700"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button onclick="closeModal()" class="flex-1 bg-gray-100 p-4 rounded-2xl font-black text-xs uppercase">Cancelar</button>
+                <button onclick="guardarDatos()" class="flex-1 bg-blue-600 text-white p-4 rounded-2xl font-black text-xs uppercase">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalPDF" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl overflow-y-auto max-h-[90vh] no-scrollbar">
+            <h2 class="text-xl font-black mb-6 text-center text-gray-800 uppercase italic">Configurar Informe PDF</h2>
+            <div id="gridMesesPDF" class="grid grid-cols-3 gap-2 mb-6 text-center"></div>
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('modalPDF').classList.add('hidden')" class="flex-1 bg-gray-100 p-4 rounded-2xl font-black uppercase text-[10px]">Cerrar</button>
+                <button onclick="generarPDFPersonalizado()" class="flex-1 bg-red-600 text-white p-4 rounded-2xl font-black uppercase text-[10px]">Generar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let anioActual = parseInt(localStorage.getItem('anioSeleccionado')) || 2026;
+        let mesActual = new Date().getMonth();
+        let empresaActiva = localStorage.getItem('empresaActiva') || 'Principal';
+        let empresas = JSON.parse(localStorage.getItem('listaEmpresas')) || ['Principal'];
+        let diaSeleccionado = null;
+        let datos = {};
+
+        const nombresMeses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+        function toggleMenu() { document.getElementById('menuOpciones').classList.toggle('hidden'); }
+        function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+        function toggleExtra() { document.getElementById('divExtras').classList.toggle('hidden', !document.getElementById('checkExtra').checked); }
+        function cambiarMes(index) { mesActual = index; render(); }
+        function actualizarSelector() { document.getElementById('selectEmpresa').innerHTML = empresas.map(e => `<option value="${e}" ${e === empresaActiva ? 'selected' : ''}>${e}</option>`).join(''); }
+        function cargarDatos() { datos = JSON.parse(localStorage.getItem(`horas_${anioActual}_${empresaActiva}`)) || {}; }
+
+        function cambiarEmpresaActiva() { 
+            empresaActiva = document.getElementById('selectEmpresa').value; 
+            localStorage.setItem('empresaActiva', empresaActiva); 
+            cargarDatos(); render(); 
+        }
+
+        function nuevaEmpresa() {
+            const n = prompt("Nombre de la nueva empresa:");
+            if(n) { if(!empresas.includes(n)) empresas.push(n); empresaActiva = n; localStorage.setItem('listaEmpresas', JSON.stringify(empresas)); localStorage.setItem('empresaActiva', n); actualizarSelector(); cambiarEmpresaActiva(); toggleMenu(); }
+        }
+
+        function fijarPrecioGlobal() {
+            const p = prompt("Precio hora normal para " + empresaActiva + ":", localStorage.getItem(`precio_${empresaActiva}`) || 15);
+            if(p) { localStorage.setItem(`precio_${empresaActiva}`, p); render(); toggleMenu(); }
+        }
+
+        function cambiarAnio() {
+            const a = prompt("Año:", anioActual);
+            if(a) { anioActual = parseInt(a); localStorage.setItem('anioSeleccionado', a); cargarDatos(); render(); toggleMenu(); }
+        }
+
+        function abrirEditor(dia) {
+            diaSeleccionado = dia;
+            const d = datos[`${mesActual}-${dia}`];
+            document.getElementById('modalTitulo').innerText = `${dia} ${nombresMeses[mesActual]}`;
+            document.getElementById('entrada').value = d?.entrada || "08:00";
+            document.getElementById('salida').value = d?.salida || "16:30";
+            document.getElementById('desayuno').value = d?.desayuno || "30";
+            document.getElementById('precio').value = d?.precio || localStorage.getItem(`precio_${empresaActiva}`) || 15;
+            const hasExtra = d?.hExtraCant > 0;
+            document.getElementById('checkExtra').checked = hasExtra;
+            document.getElementById('hExtraCant').value = d?.hExtraCant || 0;
+            document.getElementById('hExtraPrecio').value = d?.hExtraPrecio || 20;
+            document.getElementById('divExtras').classList.toggle('hidden', !hasExtra);
+            document.getElementById('modal').classList.remove('hidden');
+        }
+
+        function guardarDatos() {
+            const e = document.getElementById('entrada').value, s = document.getElementById('salida').value,
+                  des = parseInt(document.getElementById('desayuno').value) || 0, p = parseFloat(document.getElementById('precio').value) || 0;
+            const exCant = parseFloat(document.getElementById('hExtraCant').value) || 0, exPrec = parseFloat(document.getElementById('hExtraPrecio').value) || 0;
+            const isExtra = document.getElementById('checkExtra').checked;
+            let t1 = new Date(`2000-01-01 ${e}`), t2 = new Date(`2000-01-01 ${s}`);
+            if (t2 < t1) t2.setDate(t2.getDate() + 1);
+            let hNetas = Math.max(0, ((t2 - t1) / 60000 - des) / 60);
+            let totalDia = (hNetas * p) + (isExtra ? exCant * exPrec : 0);
+            datos[`${mesActual}-${diaSeleccionado}`] = { entrada: e, salida: s, desayuno: des, precio: p, horas: hNetas.toFixed(2), hExtraCant: isExtra ? exCant : 0, hExtraPrecio: isExtra ? exPrec : 0, dinero: totalDia.toFixed(2) };
+            localStorage.setItem(`horas_${anioActual}_${empresaActiva}`, JSON.stringify(datos));
+            render(); closeModal();
+        }
+
+        function render() {
+            document.getElementById('mesTitulo').innerText = `${nombresMeses[mesActual]} ${anioActual}`;
+            document.getElementById('labelEmpresaH').innerText = empresaActiva;
+            document.getElementById('labelEmpresaD').innerText = empresaActiva;
+            const numDias = new Date(anioActual, mesActual + 1, 0).getDate();
+            const lista = document.getElementById('listaJornadas');
+            lista.innerHTML = "";
+            let th = 0, td = 0;
+            for (let i = 1; i <= numDias; i++) {
+                const n = diasSemana[new Date(anioActual, mesActual, i).getDay()], d = datos[`${mesActual}-${i}`];
+                if (d) { th += parseFloat(d.horas) + (parseFloat(d.hExtraCant) || 0); td += parseFloat(d.dinero); }
+                lista.innerHTML += `<div onclick="abrirEditor(${i})" class="flex items-center justify-between p-4 rounded-2xl border-l-4 ${d ? 'bg-white border-blue-500 shadow-md' : 'bg-gray-50 border-transparent'} mb-2">
+                    <div class="flex items-center gap-4"><div class="text-center w-8"><span class="block text-[8px] font-black text-gray-400 uppercase">${n}</span><span class="block text-lg font-black text-gray-700">${i.toString().padStart(2,'0')}</span></div>
+                    <div class="text-left text-xs font-bold">${d ? `${d.entrada}-${d.salida}${d.hExtraCant > 0 ? ' <span class="text-blue-500 font-black">+EXT</span>' : ''}` : '<span class="text-gray-300">LIBRE</span>'}</div></div>
+                    ${d ? `<div class="text-right font-black text-blue-600 text-lg">${d.dinero}€</div>` : ''}</div>`;
+            }
+            document.getElementById('totalHorasMes').innerText = `${th.toFixed(1)}h`;
+            document.getElementById('totalDineroMes').innerText = `${td.toFixed(2)}€`;
+            document.querySelectorAll('.tab-btn').forEach((t, i) => { t.className = `tab-btn flex-none px-6 py-5 text-[10px] font-black uppercase tracking-widest ${i === mesActual ? 'active-tab text-blue-600' : 'text-gray-400'}`; });
+        }
+
+        function abrirModalPDF() {
+            toggleMenu();
+            const grid = document.getElementById('gridMesesPDF');
+            grid.innerHTML = nombresMeses.map((m, i) => `<label class="p-2 border rounded-xl font-bold text-[10px] uppercase has-[:checked]:bg-blue-600 has-[:checked]:text-white cursor-pointer"><input type="checkbox" class="hidden checkMes" value="${i}" ${i === mesActual ? 'checked' : ''}> ${m.substring(0,3)}</label>`).join('');
+            document.getElementById('modalPDF').classList.remove('hidden');
+        }
+
+        function generarPDFPersonalizado() {
+            const seleccionados = Array.from(document.querySelectorAll('.checkMes:checked')).map(el => parseInt(el.value));
+            const tempDiv = document.createElement('div');
+            tempDiv.style.padding = '20px';
+            tempDiv.innerHTML = `<h1 style="text-align:center">${empresaActiva} - ${anioActual}</h1>`;
+            seleccionados.forEach(mIdx => {
+                let table = `<table border="1" style="width:100%; border-collapse:collapse; margin-top:10px"><tr><th>Día</th><th>Horas</th><th>Total</th></tr>`;
+                for(let i=1; i<=31; i++) { const d = datos[`${mIdx}-${i}`]; if(d) table += `<tr><td>${i}</td><td>${d.horas}h</td><td>${d.dinero}€</td></tr>`; }
+                tempDiv.innerHTML += `<h3>${nombresMeses[mIdx]}</h3>` + table + `</table>`;
+            });
+            html2pdf().from(tempDiv).save(`Informe_${empresaActiva}.pdf`);
+        }
+
+        function exportarExcel() {
+            let f = [["EMPRESA:", empresaActiva], ["INFORME:", nombresMeses[mesActual]], [], ["Día", "Entrada", "Salida", "Horas", "Extras", "Dinero"]];
+            for(let i=1; i<=31; i++) { const d = datos[`${mesActual}-${i}`]; if(d) f.push([i, d.entrada, d.salida, d.horas, d.hExtraCant, d.dinero]); }
+            const ws = XLSX.utils.aoa_to_sheet(f); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Horas");
+            XLSX.writeFile(wb, `Horas_${empresaActiva}.xlsx`); toggleMenu();
+        }
+
+        actualizarSelector(); cargarDatos(); render();
+    </script>
+</body>
+</html>
